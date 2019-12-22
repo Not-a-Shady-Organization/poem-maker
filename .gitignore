@@ -1,0 +1,6 @@
+
+.envrc
+*env
+not-shady-utils
+auth-key-file.json
+.DS_Store
