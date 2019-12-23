@@ -352,7 +352,7 @@ def get_craigslist_ad(bucket_dir, min_word_count=20):
 
     for blob in blobs:
         # Check if compliant with filters
-        if blob.name == 'ledger.txt':
+        if 'ledger.txt' in blob.name:
             continue
 
         if f'craigslist/{bucket_dir}' in blob.name and blob.metadata['used'] == 'false' and int(blob.metadata['word_count']) > min_word_count:
