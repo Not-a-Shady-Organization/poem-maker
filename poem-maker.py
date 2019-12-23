@@ -362,7 +362,7 @@ def get_craigslist_ad(bucket_dir, min_word_count=20):
             return {
                 'blob': blob,
                 'title': splitted[0],
-                'body': '\n'.join(splitted[1:])
+                'body': '\n'.join(splitted[1:]),
             }
 
 
@@ -416,10 +416,11 @@ if __name__ == '__main__':
         logging.info(f"Poem successfully created.")
 
         # TODO: Is it true that the poem is created always?
+        blob = obj['blob']
         if not args.preserve:
-            blob = obj['blob']
             blob.metadata = {'used': 'true'}
             blob.patch()
+        posted_time = blob.metadata['posted_time']
 
 
     elif args.url:
@@ -448,12 +449,14 @@ if __name__ == '__main__':
         logging.info(f"Poem successfully created.")
 
     # Upload poem to poetry bucket dir
-    # TODO Ensure we have a bucket_dir in all cases
-    # Fades take forever in containers....
     dest_path = f'poems/{args.bucket_dir}/{clean_word(obj["title"])}.mp4'
     length = get_media_length(poem_filepath)
 
-    metadata = {'length': length}
+    # TODO Pretty sure I've broken the url and local file functionality with this
+    metadata = {
+        'length': length,
+        'posted_time': posted_time
+    }
 
     upload_file_to_bucket('craig-the-poet', poem_filepath, dest_path, metadata=metadata)
     print(f'Uploaded to bucket at {dest_path}')

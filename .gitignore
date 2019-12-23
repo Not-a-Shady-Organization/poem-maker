@@ -4,3 +4,5 @@
 not-shady-utils
 auth-key-file.json
 .DS_Store
+posts
+logs
