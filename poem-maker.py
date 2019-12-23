@@ -278,8 +278,10 @@ def create_poetry(title, body):
     def clean_title(t):
         return t.replace('"','').replace("'",'').replace('/','-')
 
-    if os.environ['in_docker'] == 'True':
+    if 'in_docker' in os.environ and os.environ['in_docker'] == 'True':
         text_to_image(clean_title(title), file_map['title-frame.jpg'], font='Brush-Script-MT-Italic')
+    else:
+        text_to_image(clean_title(title), file_map['title-frame.jpg'])
 
     resize_image(file_map['title-frame.jpg'], 1920, 1080, file_map['title-frame-full.jpg'])
 
@@ -301,12 +303,17 @@ def create_poetry(title, body):
 
     print('Altered TTS audio added to title slideshow')
 
-    fade_length = 0.3
-    fade_in_fade_out(file_map['title-slideshow-with-audio.mp4'], fade_length, file_map['title-slideshow-with-audio-and-fades.mp4'])
-    fade_in_fade_out(file_map['body-slideshow-with-audio.mp4'], fade_length, file_map['body-slideshow-with-audio-and-fades.mp4'])
+    fade_length = 0.4
+    fade_in_fade_out(file_map['title-slideshow-with-audio.mp4'], fade_length, fade_length, file_map['title-slideshow-with-audio-and-fades.mp4'], **ffmpeg_config)
+    fade_in_fade_out(file_map['body-slideshow-with-audio.mp4'], fade_length, fade_length, file_map['body-slideshow-with-audio-and-fades.mp4'], **ffmpeg_config)
+
+    # TODO: Solve why this fade command breaks the Docker container for some videos...
+    # Maybe TO ?
+#    copyfile(file_map['title-slideshow-with-audio.mp4'], file_map['title-slideshow-with-audio-and-fades.mp4'])
+#    copyfile(file_map['body-slideshow-with-audio.mp4'], file_map['body-slideshow-with-audio-and-fades.mp4'])
+
 
     print('Fade in and out added to body and title videos')
-
     resize_video(file_map['title-slideshow-with-audio-and-fades.mp4'], file_map['title-slideshow-with-audio-and-fades-1920x1080.mp4'], **ffmpeg_config)
     resize_video(file_map['body-slideshow-with-audio-and-fades.mp4'], file_map['body-slideshow-with-audio-and-fades-1920x1080.mp4'], **ffmpeg_config)
 
@@ -345,6 +352,9 @@ def get_craigslist_ad(bucket_dir, min_word_count=20):
 
     for blob in blobs:
         # Check if compliant with filters
+        if blob.name == 'ledger.txt':
+            continue
+
         if f'craigslist/{bucket_dir}' in blob.name and blob.metadata['used'] == 'false' and int(blob.metadata['word_count']) > min_word_count:
             text = blob.download_as_string().decode("utf-8")
             splitted = text.split('\n')
@@ -361,7 +371,6 @@ if __name__ == '__main__':
     parser.add_argument('--bucket-dir')
     parser.add_argument('--url')
     parser.add_argument('--local-file')
-    parser.add_argument('--count', type=int)
 
     parser.add_argument('--preserve', help="Don't delete ad from bucket after poem generates", action='store_true')
     parser.add_argument('--min-word-count', type=int, default=30, help="Minimum word count allowed for selected ad")
@@ -439,7 +448,9 @@ if __name__ == '__main__':
         logging.info(f"Poem successfully created.")
 
     # Upload poem to poetry bucket dir
-    dest_path = f'poems/{clean_word(obj["title"])}.mp4'
+    # TODO Ensure we have a bucket_dir in all cases
+    # Fades take forever in containers....
+    dest_path = f'poems/{args.bucket_dir}/{clean_word(obj["title"])}.mp4'
     length = get_media_length(poem_filepath)
 
     metadata = {'length': length}
