@@ -1,7 +1,7 @@
 FROM python:3
 
 # Get source files & API key
-COPY poem-maker.py requirements.txt auth-key-file.json ./
+COPY poem_maker.py requirements.txt auth-key-file.json ./
 COPY not-shady-utils /usr/local/not-shady-utils
 COPY craigslist-scraper /usr/local/craigslist-scraper
 COPY ["fonts/Brush Script.ttf", "/usr/share/fonts/Brush Script.ttf"]
@@ -25,4 +25,4 @@ RUN apt-get update && apt-get install -y \
   imagemagick
 
 # Define the entrypoint (we only want this container for this program anyways)
-ENTRYPOINT ["python", "poem-maker.py"]
+ENTRYPOINT ["python", "poem_maker.py"]

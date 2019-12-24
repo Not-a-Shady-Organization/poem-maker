@@ -1,10 +1,6 @@
 
 '''
 -- TODO --
-Make ad-ledgers by bucket dir
-
-
-
 Add images to blank sections
 Try interpolation for None interval entities
 Toss poems which contain few entities
@@ -14,15 +10,7 @@ Add ability to insert image manually
 Make voice options pass into TTS
 Make bucket searchable by topics
 
-Setup chron trigger on scraper
-Make poem worker…?
-
-Make ledger bucket based
-Organize create & craig
-
-
 Improve logging
-
 
 Add pauses
 '''
@@ -38,7 +26,7 @@ import argparse
 import os
 from shutil import copyfile
 
-from utils import makedir, clean_word, download_image_from_url, LogDecorator, text_to_image
+from utils import BadOptionsError, makedir, clean_word, download_image_from_url, LogDecorator, text_to_image
 from google_utils import find_entities, synthesize_text, transcribe_audio, interval_of, download_image, list_blobs, upload_file_to_bucket
 from ffmpeg_utils import create_slideshow, add_audio_to_video, change_audio_speed, media_to_mono_flac, resize_image, fade_in_fade_out, concat_videos, resize_video, get_media_length
 
@@ -47,6 +35,9 @@ from mutagen.mp3 import MP3
 
 
 POSTS_DIRECTORY = './posts'
+
+class NoAdError(Exception):
+    pass
 
 class DomainError(Exception):
     pass
@@ -346,18 +337,29 @@ def write_concat_file(concat_filepath, image_information):
 
 
 @LogDecorator()
-def get_craigslist_ad(bucket_dir, min_word_count=20):
+def checkout_craigslist_ad(bucket_dir, min_word_count=None):
     # Retreive and filter blobs
     blobs = list_blobs('craig-the-poet')
+    blobs = [blob for blob in blobs if bucket_dir in blob.name]
 
     for blob in blobs:
         # Check if compliant with filters
         if 'ledger.txt' in blob.name:
             continue
 
-        if f'craigslist/{bucket_dir}' in blob.name and blob.metadata['used'] == 'false' and int(blob.metadata['word_count']) > min_word_count:
+        unused = (blob.metadata['used'] == 'false') and (blob.metadata['in-use'] == 'false')
+        not_a_loser = blob.metadata['failed'] == 'false'
+        long_enough = (not min_word_count) or (int(blob.metadata['ad-body-word-count']) > min_word_count)
+
+        if unused and long_enough and not_a_loser:
             text = blob.download_as_string().decode("utf-8")
             splitted = text.split('\n')
+
+            print(f'Checking out {blob.name}')
+
+            # Check it out and update the metadata
+            blob.metadata = {'in-use': 'true'}
+            blob.patch()
 
             return {
                 'blob': blob,
@@ -366,14 +368,147 @@ def get_craigslist_ad(bucket_dir, min_word_count=20):
             }
 
 
+
+
+
+
+def poem_maker(source_bucket_dir, url, local_file, destination_bucket_dir, preserve, min_word_count, **kwargs):
+    #################
+    # VALIDATE MODE #
+    #################
+
+    # Validate that we have some source text
+    if not source_bucket_dir and not url and not local_file:
+        raise BadOptionsError('Please specify one of --source-bucket-dir or --url or --local-file')
+
+    if (source_bucket_dir and url) or (url and local_file) or (local_file and source_bucket_dir):
+        raise BadOptionsError('Two text sources were specified. Please specify one of --url, --local-file, or --source-bucket-dir')
+
+    if (url and not destination_bucket_dir) or (local_file and not destination_bucket_dir):
+        raise BadOptionsError('When not pulling from a --source-bucket-dir, must specify a --destination-bucket-dir')
+
+
+    # Note which options are unused
+    if (url or local_file) and min_word_count:
+        print('As a particular source text was specified, --min-word-count flag is ignored')
+
+    if (url or local_file) and preserve:
+        print('As we do not interact with a bucket blob in this mode, --preserve flag is ignored')
+
+
+    # TODO Make this work
+    # Construct params for Google TTS
+#    tts_params = {
+#        'name': voice,
+#        'speaking_rate': speaking_rate,
+#        'pitch': pitch,
+#    }
+
+    # Setup for logging
+    makedir(f'logs')
+    log_filename = next_log_file(f'logs')
+    LOG_FILEPATH = f'logs/{log_filename}'
+    logging.basicConfig(filename=LOG_FILEPATH, level=logging.DEBUG)
+    import LogDecorator
+
+
+    poem_filepath = ''
+
+    # Get a subject ad
+    if source_bucket_dir:
+        logging.info(f'Starting program on bucket directory {source_bucket_dir}')
+        obj = checkout_craigslist_ad(source_bucket_dir, min_word_count)
+
+    elif url:
+        logging.info(f'Starting program on specified URL: {url}')
+        s = Scraper()
+        obj = s.scrape_craigslist_ad(url)
+
+    elif local_file:
+        logging.info(f'Starting program on specified ad: {local_file}')
+
+        try:
+            obj = {}
+            with open(local_file, 'r') as f:
+                lines = f.readlines()
+                obj['title'] = lines[0]
+                obj['body'] = '\n'.join(lines[1:])
+        except:
+            raise NoAdError(f'Failed to read local file {local_file} as ad')
+
+    # Check that we got an ad successfully
+    if not obj:
+        raise NoAdError(f'Failed to retreive ad')
+
+    # Make a poem from the ad
+    try:
+        poem_filepath = create_poetry(obj['title'], obj['body'])
+        blob = obj['blob']
+        blob.metadata = {'in-use': 'false'}
+        blob.patch()
+    except:
+        logging.error(f'Could not complete poem generation on ad {obj["title"]}')
+        blob = obj['blob']
+        blob.metadata = {'in-use': 'false', 'failed': 'true'}
+        blob.patch()
+
+    # If we got the ad from a bucket, handle metadata
+    metadata = {
+        'ad-url': '',
+        'ad-title': '',
+        'ad-posted-time': '',
+        'ad-body-word-count': '',
+        'runtime': '',
+    }
+
+    if source_bucket_dir:
+        blob = obj['blob']
+
+        # TODO Grab all needed elemetns and pass on
+        # Note the posted url, title, posted time, and body word count
+        metadata['ad-url'] = blob.metadata['ad-url']
+        metadata['ad-title'] = blob.metadata['ad-title']
+        metadata['ad-posted-time'] = blob.metadata['ad-posted-time']
+        metadata['ad-body-word-count'] = blob.metadata['ad-body-word-count']
+
+        # Mark as used if applicable
+        if not preserve:
+            blob.metadata = {'used': 'true'}
+            blob.patch()
+
+    if url:
+        metadata['ad-url'] = url
+        metadata['ad-title'] = obj['title']
+        metadata['ad-posted-time'] = obj['ad-posted-time']
+        metadata['ad-body-word-count'] = len(obj['body'].split(' '))
+
+    if local_file:
+        metadata['ad-title'] = obj['title']
+        metadata['ad-body-word-count'] = len(obj['body'].split(' '))
+
+    runtime = get_media_length(poem_filepath)
+    metadata['runtime'] = runtime
+
+    # Upload poem to destination bucket dir
+    if not destination_bucket_dir:
+        destination_bucket_dir = source_bucket_dir
+    dest_path = f'poems/{destination_bucket_dir}/{clean_word(obj["title"])}.mp4'
+    upload_file_to_bucket('craig-the-poet', poem_filepath, dest_path, metadata=metadata)
+    logging.info(f'Uploaded to bucket at {dest_path}')
+
+
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--bucket-dir')
+    parser.add_argument('--source-bucket-dir')
     parser.add_argument('--url')
     parser.add_argument('--local-file')
+    parser.add_argument('--destination-bucket-dir')
 
     parser.add_argument('--preserve', help="Don't delete ad from bucket after poem generates", action='store_true')
-    parser.add_argument('--min-word-count', type=int, default=30, help="Minimum word count allowed for selected ad")
+    parser.add_argument('--min-word-count', type=int, help="Minimum word count allowed for selected ad")
+
 
     parser.add_argument('--voice', default='en-IN-Wavenet-C', help="TTS voice option")
     parser.add_argument('--speaking_rate', type=float, default=.85, help="TTS speaking rate")
@@ -384,83 +519,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if not args.bucket_dir and not args.url and not args.local_file:
-        print('Must specify either --bucket-dir or --url or --local-file. Exiting...')
-        exit()
-
-    tts_params = {
-        'name': args.voice,
-        'speaking_rate': args.speaking_rate,
-        'pitch': args.pitch,
-    }
-
-    # Setup for logging
-    makedir(f'logs')
-    log_filename = next_log_file(f'logs')
-    LOG_FILEPATH = f'logs/{log_filename}'
-    logging.basicConfig(filename=LOG_FILEPATH, level=logging.DEBUG)
-    import LogDecorator
-
-    poem_filepath = ''
-
-    # Get a subject ad
-    if args.bucket_dir:
-        logging.info(f'Starting program on bucket directory {args.bucket_dir}')
-        obj = get_craigslist_ad(args.bucket_dir, args.min_word_count)
-        if not obj:
-            print(f'No ads left in bucket directory {args.bucket_dir}. Exiting...')
-            exit()
-
-        logging.info(f"Ad retreived: \nTitle: {obj['title']} \nBody: {obj['body']}\n")
-        poem_filepath = create_poetry(obj['title'], obj['body'])
-        logging.info(f"Poem successfully created.")
-
-        # TODO: Is it true that the poem is created always?
-        blob = obj['blob']
-        if not args.preserve:
-            blob.metadata = {'used': 'true'}
-            blob.patch()
-        posted_time = blob.metadata['posted_time']
-
-
-    elif args.url:
-        logging.info(f'Starting program on specified ad: {args.url}')
-        s = Scraper()
-        obj = s.scrape_craigslist_ad(args.url)
-        if not obj:
-            print(f'Ad scrape was unsuccessful. Exiting...')
-            exit()
-
-        logging.info(f"Ad retreived: \nTitle: {obj['title']} \nBody: {obj['body']}\n")
-        poem_filepath = create_poetry(obj['title'], obj['body'])
-        logging.info(f"Poem successfully created.")
-
-
-    elif args.local_file:
-        logging.info(f'Starting program on specified ad: {args.local_file}')
-
-        obj = {}
-        with open(args.local_file, 'r') as f:
-            lines = f.readlines()
-            obj['title'] = lines[0]
-            obj['body'] = '\n'.join(lines[1:])
-
-        poem_filepath = create_poetry(obj['title'], obj['body'])
-        logging.info(f"Poem successfully created.")
-
-    # Upload poem to poetry bucket dir
-    dest_path = f'poems/{args.bucket_dir}/{clean_word(obj["title"])}.mp4'
-    length = get_media_length(poem_filepath)
-
-    # TODO Pretty sure I've broken the url and local file functionality with this
-    metadata = {
-        'length': length,
-        'posted_time': posted_time
-    }
-
-    upload_file_to_bucket('craig-the-poet', poem_filepath, dest_path, metadata=metadata)
-    print(f'Uploaded to bucket at {dest_path}')
-
-
-
-    ###
+    poem_maker(**vars(args))
