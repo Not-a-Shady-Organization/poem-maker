@@ -6,7 +6,11 @@ The poem maker uses `not-shady-utils`, thus we need a local copy of the utils re
 
 `git clone https://github.com/Not-a-Shady-Organization/not-shady-utils.git`
 
+`git clone https://github.com/Not-a-Shady-Organization/craigslist-scraper.git`
+
 `export PYTHONPATH=$PYTHONPATH:path/to/not-shady-utils`
+
+`export PYTHONPATH=$PYTHONPATH:path/to/craigslist-scraper`
 
 To allow access to our GCP resources we use...
 

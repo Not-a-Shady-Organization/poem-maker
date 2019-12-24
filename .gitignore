@@ -6,3 +6,5 @@ auth-key-file.json
 .DS_Store
 posts
 logs
+craigslist-scraper
+__pycache__
