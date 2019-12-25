@@ -372,7 +372,7 @@ def checkout_craigslist_ad(bucket_dir, min_word_count=None):
 
 
 
-def poem_maker(source_bucket_dir, url, local_file, destination_bucket_dir, preserve, min_word_count, **kwargs):
+def poem_maker(source_bucket_dir=None, url=None, local_file=None, destination_bucket_dir=None, preserve=None, min_word_count=None, **kwargs):
     #################
     # VALIDATE MODE #
     #################
