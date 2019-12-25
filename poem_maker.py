@@ -337,56 +337,68 @@ def write_concat_file(concat_filepath, image_information):
 
 
 @LogDecorator()
-def checkout_craigslist_ad(bucket_dir, min_word_count=None):
+def checkout_craigslist_ad(bucket_path=None, bucket_dir=None, min_word_count=None):
     # Retreive and filter blobs
     blobs = list_blobs('craig-the-poet')
-    blobs = [blob for blob in blobs if bucket_dir in blob.name]
 
-    for blob in blobs:
-        # Check if compliant with filters
-        if 'ledger.txt' in blob.name:
-            continue
+    to_checkout = None
+    if bucket_dir:
+        blobs = [blob for blob in blobs if bucket_dir in blob.name]
+        for blob in blobs:
+            # Check if compliant with filters
+            if 'ledger.txt' in blob.name:
+                continue
 
-        unused = (blob.metadata['used'] == 'false') and (blob.metadata['in-use'] == 'false')
-        not_a_loser = blob.metadata['failed'] == 'false'
-        long_enough = (not min_word_count) or (int(blob.metadata['ad-body-word-count']) > min_word_count)
+            unused = (blob.metadata['used'] == 'false') and (blob.metadata['in-use'] == 'false')
+            not_a_loser = blob.metadata['failed'] == 'false'
+            long_enough = (not min_word_count) or (int(blob.metadata['ad-body-word-count']) > min_word_count)
 
-        if unused and long_enough and not_a_loser:
-            text = blob.download_as_string().decode("utf-8")
-            splitted = text.split('\n')
+            if unused and long_enough and not_a_loser:
+                to_checkout = blob
+    else:
+        blobs = [blob for blob in blobs if bucket_path in blob.name]
+        for blob in blobs:
+            if blob.name == bucket_path:
+                to_checkout = blob
 
-            print(f'Checking out {blob.name}')
+    if not to_checkout:
+        return
 
-            # Check it out and update the metadata
-            blob.metadata = {'in-use': 'true'}
-            blob.patch()
+    text = to_checkout.download_as_string().decode("utf-8")
+    splitted = text.split('\n')
 
-            return {
-                'blob': blob,
-                'title': splitted[0],
-                'body': '\n'.join(splitted[1:]),
-            }
+    print(f'Checking out {to_checkout.name}')
+
+    # Check it out and update the metadata
+    to_checkout.metadata = {'in-use': 'true'}
+    to_checkout.patch()
+
+    return {
+        'blob': to_checkout,
+        'title': splitted[0],
+        'body': '\n'.join(splitted[1:]),
+    }
 
 
 
 
 
-
-def poem_maker(source_bucket_dir=None, url=None, local_file=None, destination_bucket_dir=None, preserve=None, min_word_count=None, **kwargs):
+def poem_maker(bucket_path=None, source_bucket_dir=None, url=None, local_file=None, destination_bucket_dir=None, preserve=None, min_word_count=None, **kwargs):
     #################
     # VALIDATE MODE #
     #################
 
     # Validate that we have some source text
-    if not source_bucket_dir and not url and not local_file:
-        raise BadOptionsError('Please specify one of --source-bucket-dir or --url or --local-file')
+    if not bucket_path and not source_bucket_dir and not url and not local_file:
+        raise BadOptionsError('Please specify one of --bucket-path, --source-bucket-dir, --url, or --local-file')
 
-    if (source_bucket_dir and url) or (url and local_file) or (local_file and source_bucket_dir):
-        raise BadOptionsError('Two text sources were specified. Please specify one of --url, --local-file, or --source-bucket-dir')
+    # Check if two input paths exist
+    empty_count = sum(1 for i in [bucket_path, source_bucket_dir, url, local_file] if i == None)
+    if empty_count < 3:
+        raise BadOptionsError('Multiple text sources were specified. Please specify one of --bucket-path, --url, --local-file, or --source-bucket-dir')
 
     if (url and not destination_bucket_dir) or (local_file and not destination_bucket_dir):
-        raise BadOptionsError('When not pulling from a --source-bucket-dir, must specify a --destination-bucket-dir')
-
+        raise BadOptionsError('When not pulling from a --source-bucket-dir or --bucket-path, must specify a --destination-bucket-dir')
 
     # Note which options are unused
     if (url or local_file) and min_word_count:
@@ -417,7 +429,10 @@ def poem_maker(source_bucket_dir=None, url=None, local_file=None, destination_bu
     # Get a subject ad
     if source_bucket_dir:
         logging.info(f'Starting program on bucket directory {source_bucket_dir}')
-        obj = checkout_craigslist_ad(source_bucket_dir, min_word_count)
+        obj = checkout_craigslist_ad(bucket_dir=source_bucket_dir, min_word_count=min_word_count)
+
+    elif bucket_path:
+        obj = checkout_craigslist_ad(bucket_path=bucket_path)
 
     elif url:
         logging.info(f'Starting program on specified URL: {url}')
@@ -501,6 +516,7 @@ def poem_maker(source_bucket_dir=None, url=None, local_file=None, destination_bu
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--bucket-path')
     parser.add_argument('--source-bucket-dir')
     parser.add_argument('--url')
     parser.add_argument('--local-file')
