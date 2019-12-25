@@ -1,7 +1,9 @@
-FROM python:3
+# Use the official lightweight Python image.
+# https://hub.docker.com/_/python
+FROM python:3.7-slim
 
 # Get source files & API key
-COPY poem_maker.py requirements.txt auth-key-file.json ./
+COPY poem_maker.py requirements.txt auth-key-file.json app.py ./
 COPY not-shady-utils /usr/local/not-shady-utils
 COPY craigslist-scraper /usr/local/craigslist-scraper
 COPY ["fonts/Brush Script.ttf", "/usr/share/fonts/Brush Script.ttf"]
@@ -18,6 +20,7 @@ ENV in_docker=True
 
 # Install Python dependencies
 RUN pip3 install -r requirements.txt
+RUN pip3 install gunicorn
 
 # Install other dependencies
 RUN apt-get update && apt-get install -y \
@@ -25,4 +28,4 @@ RUN apt-get update && apt-get install -y \
   imagemagick
 
 # Define the entrypoint (we only want this container for this program anyways)
-ENTRYPOINT ["python", "poem_maker.py"]
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 app:app
