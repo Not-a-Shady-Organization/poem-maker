@@ -11,8 +11,11 @@ def hello_world():
 @app.route('/', methods=['POST'])
 def kickoff_poem_maker():
     data = request.get_json()
-    poem_maker(**data)
-    return f'Job received: {str(data)}'
+    try:
+        poem_maker(**data)
+    except Exception as e:
+        return f'Couldn\'t find any unused ads meeting these specifications.'
+    return f'Job completed: {str(data)}'
 
 
 if __name__ == '__main__':
