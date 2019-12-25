@@ -397,8 +397,8 @@ def poem_maker(bucket_path=None, source_bucket_dir=None, url=None, local_file=No
     if empty_count < 3:
         raise BadOptionsError('Multiple text sources were specified. Please specify one of --bucket-path, --url, --local-file, or --source-bucket-dir')
 
-    if (url and not destination_bucket_dir) or (local_file and not destination_bucket_dir):
-        raise BadOptionsError('When not pulling from a --source-bucket-dir or --bucket-path, must specify a --destination-bucket-dir')
+    if (bucket_path and not destination_bucket_dir) or (url and not destination_bucket_dir) or (local_file and not destination_bucket_dir):
+        raise BadOptionsError('When not pulling from a --source-bucket-dir, must specify a --destination-bucket-dir')
 
     # Note which options are unused
     if (url or local_file) and min_word_count:
@@ -476,7 +476,7 @@ def poem_maker(bucket_path=None, source_bucket_dir=None, url=None, local_file=No
         'runtime': '',
     }
 
-    if source_bucket_dir:
+    if source_bucket_dir or bucket_path:
         blob = obj['blob']
 
         # TODO Grab all needed elemetns and pass on
@@ -507,6 +507,7 @@ def poem_maker(bucket_path=None, source_bucket_dir=None, url=None, local_file=No
     # Upload poem to destination bucket dir
     if not destination_bucket_dir:
         destination_bucket_dir = source_bucket_dir
+
     dest_path = f'poems/{destination_bucket_dir}/{clean_word(obj["title"])}.mp4'
     upload_file_to_bucket('craig-the-poet', poem_filepath, dest_path, metadata=metadata)
     logging.info(f'Uploaded to bucket at {dest_path}')
