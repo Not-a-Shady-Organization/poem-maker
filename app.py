@@ -14,6 +14,7 @@ def kickoff_poem_maker():
     try:
         poem_maker(**data)
     except Exception as e:
+        # TODO Fix this.. This is probably not the only fail case here
         return f'Couldn\'t find any unused ads meeting these specifications.'
     return f'Job completed: {str(data)}'
 
