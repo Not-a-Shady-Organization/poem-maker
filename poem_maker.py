@@ -347,7 +347,11 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, **kwargs):
 
     # Validate that we have some source text
     if not bucket_path:
-        raise BadOptionsError('Must specify one of BUCKET_PATH')
+        raise BadOptionsError('Must specify a BUCKET_PATH')
+
+    if not destination_bucket_dir:
+        raise BadOptionsError('Must specify a DESTINATION_BUCKET_DIR')
+
 
     # TODO Make this work
     # Construct params for Google TTS
@@ -400,7 +404,7 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, **kwargs):
     }
 
     # Upload poem to destination bucket dir
-    dest_path = f'{destination_bucket_dir}/{clean_word(obj["title"])}.mp4'
+    dest_path = f'craigslist/{destination_bucket_dir}/{clean_word(obj["title"])}.mp4'
     upload_file_to_bucket('craig-the-poet', poem_filepath, dest_path, metadata=metadata)
     logging.info(f'Uploaded to bucket at {dest_path}')
     return dest_path
