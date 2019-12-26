@@ -374,8 +374,7 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, **kwargs):
     blob_text = ad_blob.download_as_string().decode("utf-8")
     obj = {
         'title': blob_text.split('\n')[0],
-        # TODO Double check that this is how you retreive a body
-        'body': blob_text.split('\n')[1:][0],
+        'body': '\n'.join(blob_text.split('\n')[1:]),
         'blob': ad_blob
     }
 
