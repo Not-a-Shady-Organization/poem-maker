@@ -27,10 +27,9 @@ import os
 from shutil import copyfile
 
 from utils import BadOptionsError, makedir, clean_word, download_image_from_url, LogDecorator, text_to_image
-from google_utils import find_entities, synthesize_text, transcribe_audio, interval_of, download_image, list_blobs, upload_file_to_bucket
+from google_utils import get_blob, find_entities, synthesize_text, transcribe_audio, interval_of, download_image, list_blobs, upload_file_to_bucket
 from ffmpeg_utils import create_slideshow, add_audio_to_video, change_audio_speed, media_to_mono_flac, resize_image, fade_in_fade_out, concat_videos, resize_video, get_media_length
 
-from Scraper import Scraper
 from mutagen.mp3 import MP3
 
 
@@ -336,77 +335,19 @@ def write_concat_file(concat_filepath, image_information):
         f.write(f'file {filepath}\n')
 
 
-@LogDecorator()
-def checkout_craigslist_ad(bucket_path=None, bucket_dir=None, min_word_count=None):
-    # Retreive and filter blobs
-    blobs = list_blobs('craig-the-poet')
-
-    to_checkout = None
-    if bucket_dir:
-        blobs = [blob for blob in blobs if bucket_dir in blob.name]
-        for blob in blobs:
-            # Check if compliant with filters
-            if 'ledger.txt' in blob.name:
-                continue
-
-            unused = (blob.metadata['used'] == 'false') and (blob.metadata['in-use'] == 'false')
-            not_a_loser = blob.metadata['failed'] == 'false'
-            long_enough = (not min_word_count) or (int(blob.metadata['ad-body-word-count']) > min_word_count)
-
-            if unused and long_enough and not_a_loser:
-                to_checkout = blob
-    else:
-        blobs = [blob for blob in blobs if bucket_path in blob.name]
-        for blob in blobs:
-            if blob.name == bucket_path:
-                to_checkout = blob
-
-    if not to_checkout:
-        return
-
-    text = to_checkout.download_as_string().decode("utf-8")
-    splitted = text.split('\n')
-
-    print(f'Checking out {to_checkout.name}')
-
-    # Check it out and update the metadata
-    to_checkout.metadata = {'in-use': 'true'}
-    to_checkout.patch()
-
-    return {
-        'blob': to_checkout,
-        'title': splitted[0],
-        'body': '\n'.join(splitted[1:]),
-    }
 
 
 
 
 
-def poem_maker(bucket_path=None, source_bucket_dir=None, url=None, local_file=None, destination_bucket_dir=None, preserve=None, min_word_count=None, **kwargs):
+def poem_maker(bucket_path=None, destination_bucket_dir=None, **kwargs):
     #################
     # VALIDATE MODE #
     #################
 
     # Validate that we have some source text
-    if not bucket_path and not source_bucket_dir and not url and not local_file:
-        raise BadOptionsError('Please specify one of --bucket-path, --source-bucket-dir, --url, or --local-file')
-
-    # Check if two input paths exist
-    empty_count = sum(1 for i in [bucket_path, source_bucket_dir, url, local_file] if i == None)
-    if empty_count < 3:
-        raise BadOptionsError('Multiple text sources were specified. Please specify one of --bucket-path, --url, --local-file, or --source-bucket-dir')
-
-    if (bucket_path and not destination_bucket_dir) or (url and not destination_bucket_dir) or (local_file and not destination_bucket_dir):
-        raise BadOptionsError('When not pulling from a --source-bucket-dir, must specify a --destination-bucket-dir')
-
-    # Note which options are unused
-    if (url or local_file) and min_word_count:
-        print('As a particular source text was specified, --min-word-count flag is ignored')
-
-    if (url or local_file) and preserve:
-        print('As we do not interact with a bucket blob in this mode, --preserve flag is ignored')
-
+    if not bucket_path:
+        raise BadOptionsError('Must specify one of BUCKET_PATH')
 
     # TODO Make this work
     # Construct params for Google TTS
@@ -424,108 +365,52 @@ def poem_maker(bucket_path=None, source_bucket_dir=None, url=None, local_file=No
     import LogDecorator
 
 
-    poem_filepath = ''
+    # Set file to in-use
+    ad_blob = get_blob(bucket_path)
+    ad_blob.metadata = {'in-use': 'true'}
+    ad_blob.patch()
 
-    # Get a subject ad
-    if source_bucket_dir:
-        logging.info(f'Starting program on bucket directory {source_bucket_dir}')
-        obj = checkout_craigslist_ad(bucket_dir=source_bucket_dir, min_word_count=min_word_count)
-
-    elif bucket_path:
-        obj = checkout_craigslist_ad(bucket_path=bucket_path)
-
-    elif url:
-        logging.info(f'Starting program on specified URL: {url}')
-        s = Scraper()
-        obj = s.scrape_craigslist_ad(url)
-
-    elif local_file:
-        logging.info(f'Starting program on specified ad: {local_file}')
-
-        try:
-            obj = {}
-            with open(local_file, 'r') as f:
-                lines = f.readlines()
-                obj['title'] = lines[0]
-                obj['body'] = '\n'.join(lines[1:])
-        except:
-            raise NoAdError(f'Failed to read local file {local_file} as ad')
-
-    # Check that we got an ad successfully
-    if not obj:
-        raise NoAdError(f'Failed to retreive ad')
-
-    # Make a poem from the ad
-    try:
-        poem_filepath = create_poetry(obj['title'], obj['body'])
-        blob = obj['blob']
-        blob.metadata = {'in-use': 'false'}
-        blob.patch()
-    except:
-        logging.error(f'Could not complete poem generation on ad {obj["title"]}')
-        blob = obj['blob']
-        blob.metadata = {'in-use': 'false', 'failed': 'true'}
-        blob.patch()
-
-    # If we got the ad from a bucket, handle metadata
-    metadata = {
-        'ad-url': '',
-        'ad-title': '',
-        'ad-posted-time': '',
-        'ad-body-word-count': '',
-        'runtime': '',
+    # Download file as string in obj
+    blob_text = ad_blob.download_as_string().decode("utf-8")
+    obj = {
+        'title': blob_text.split('\n')[0],
+        'body': '\n'.join(blob_text.split('\n')[1:]),
+        'blob': ad_blob
     }
 
-    if source_bucket_dir or bucket_path:
-        blob = obj['blob']
+    # Make a poem from the ad
+    poem_filepath = ''
+    try:
+        poem_filepath = create_poetry(obj['title'], obj['body'])
+        ad_blob.metadata = {'in-use': 'false'}
+        ad_blob.patch()
+    except Exception as e:
+        print(e)
+        logging.error(f'Could not complete poem generation on ad {obj["title"]}')
+        ad_blob.metadata = {'in-use': 'false', 'failed': 'true'}
+        ad_blob.patch()
 
-        # TODO Grab all needed elemetns and pass on
-        # Note the posted url, title, posted time, and body word count
-        metadata['ad-url'] = blob.metadata['ad-url']
-        metadata['ad-title'] = blob.metadata['ad-title']
-        metadata['ad-posted-time'] = blob.metadata['ad-posted-time']
-        metadata['ad-body-word-count'] = blob.metadata['ad-body-word-count']
-
-        # Mark as used if applicable
-        if not preserve:
-            blob.metadata = {'used': 'true'}
-            blob.patch()
-
-    if url:
-        metadata['ad-url'] = url
-        metadata['ad-title'] = obj['title']
-        metadata['ad-posted-time'] = obj['ad-posted-time']
-        metadata['ad-body-word-count'] = len(obj['body'].split(' '))
-
-    if local_file:
-        metadata['ad-title'] = obj['title']
-        metadata['ad-body-word-count'] = len(obj['body'].split(' '))
-
-    runtime = get_media_length(poem_filepath)
-    metadata['runtime'] = runtime
+    # Pass along the metadata
+    metadata = {
+        'ad-url': ad_blob.metadata['ad-url'],
+        'ad-title': ad_blob.metadata['ad-title'],
+        'ad-posted-time': ad_blob.metadata['ad-posted-time'],
+        'ad-body-word-count': ad_blob.metadata['ad-body-word-count'],
+        'runtime': get_media_length(poem_filepath)
+    }
 
     # Upload poem to destination bucket dir
-    if not destination_bucket_dir:
-        destination_bucket_dir = source_bucket_dir
-
-    dest_path = f'poems/{destination_bucket_dir}/{clean_word(obj["title"])}.mp4'
+    dest_path = f'{destination_bucket_dir}/{clean_word(obj["title"])}.mp4'
     upload_file_to_bucket('craig-the-poet', poem_filepath, dest_path, metadata=metadata)
     logging.info(f'Uploaded to bucket at {dest_path}')
-
+    return dest_path
 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bucket-path')
-    parser.add_argument('--source-bucket-dir')
-    parser.add_argument('--url')
-    parser.add_argument('--local-file')
     parser.add_argument('--destination-bucket-dir')
-
-    parser.add_argument('--preserve', help="Don't delete ad from bucket after poem generates", action='store_true')
-    parser.add_argument('--min-word-count', type=int, help="Minimum word count allowed for selected ad")
-
 
     parser.add_argument('--voice', default='en-IN-Wavenet-C', help="TTS voice option")
     parser.add_argument('--speaking_rate', type=float, default=.85, help="TTS speaking rate")
@@ -536,4 +421,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    poem_maker(**vars(args))
+    print(poem_maker(**vars(args)))

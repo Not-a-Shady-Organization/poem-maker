@@ -5,7 +5,7 @@ FROM python:3.7-slim
 # Get source files & API key
 COPY poem_maker.py requirements.txt auth-key-file.json app.py ./
 COPY not-shady-utils /usr/local/not-shady-utils
-COPY craigslist-scraper /usr/local/craigslist-scraper
+#COPY craigslist-scraper /usr/local/craigslist-scraper
 COPY ["fonts/Brush Script.ttf", "/usr/share/fonts/Brush Script.ttf"]
 
 # Note credential location for use of Google/YouTube APIs
