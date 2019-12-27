@@ -20,6 +20,7 @@ Add pauses
 import logging
 from contextlib import redirect_stdout
 
+from random import choice
 from subprocess import check_output
 import io
 import argparse
@@ -104,7 +105,7 @@ def create_file_structure(post_subdirectory):
 
 
 
-def create_poetry(title, body, tts_params):
+def create_poetry(title, body, tts_params, image_flavor):
     ffmpeg_config = {'loglevel': 'panic', 'safe': 0, 'hide_banner': None, 'y': None}
 
     print(f'Creating poem on... \n\tTitle:{title}\n\tBody:{body}')
@@ -198,15 +199,16 @@ def create_poetry(title, body, tts_params):
     entity_information = dict()
 
     # Call to redirect_stdout catches output in variable f (Don't want it, I just don't like the output)
-    f = io.StringIO()
-    with redirect_stdout(f):
-        for word, interval in entity_intervals.items():
-            image_filepath = download_image(clean_word(word), file_map['image_dir'], f'{clean_word(word)}')
+#    f = io.StringIO()
+#    with redirect_stdout(f):
+    for word, interval in entity_intervals.items():
+        search_term = clean_word(word) if not image_flavor else clean_word(word) + ' ' + choice(image_flavor)
+        image_filepath = download_image(search_term, file_map['image_dir'], f'{search_term}')
 
-            entity_information[word] = {
-                'image_filepath': f'{image_filepath}',
-                'interval': interval
-            }
+        entity_information[word] = {
+            'image_filepath': f'{image_filepath}',
+            'interval': interval
+        }
 
     print('Images downloaded for transcribed entities')
 
@@ -337,7 +339,7 @@ def write_concat_file(concat_filepath, image_information):
 
 
 
-def poem_maker(bucket_path=None, destination_bucket_dir=None, **kwargs):
+def poem_maker(bucket_path=None, destination_bucket_dir=None, image_flavor=None, **kwargs):
     #################
     # VALIDATE MODE #
     #################
@@ -382,7 +384,7 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, **kwargs):
     # Make a poem from the ad
     poem_filepath = ''
     try:
-        poem_filepath = create_poetry(obj['title'], obj['body'],tts_params)
+        poem_filepath = create_poetry(obj['title'], obj['body'],tts_params, image_flavor=image_flavor)
         ad_blob.metadata = {'in-use': 'false'}
         ad_blob.patch()
     except Exception as e:
@@ -390,6 +392,7 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, **kwargs):
         logging.error(f'Could not complete poem generation on ad {obj["title"]}')
         ad_blob.metadata = {'in-use': 'false', 'failed': 'true'}
         ad_blob.patch()
+        return ''
 
     # Pass along the metadata
     metadata = {
@@ -412,6 +415,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bucket-path')
     parser.add_argument('--destination-bucket-dir')
+
+    parser.add_argument('--image-flavor', nargs='+')
 
     parser.add_argument('--voice', default='en-IN-Wavenet-C', help="TTS voice option")
     parser.add_argument('--speaking_rate', type=float, default=.85, help="TTS speaking rate")
