@@ -104,7 +104,7 @@ def create_file_structure(post_subdirectory):
 
 
 
-def create_poetry(title, body):
+def create_poetry(title, body, tts_params):
     ffmpeg_config = {'loglevel': 'panic', 'safe': 0, 'hide_banner': None, 'y': None}
 
     print(f'Creating poem on... \n\tTitle:{title}\n\tBody:{body}')
@@ -139,23 +139,20 @@ def create_poetry(title, body):
     synthesize_text(
         title,
         file_map['tts-title.mp3'],
-        name='en-IN-Wavenet-B',
-        pitch=-1,
-        speaking_rate=0.8,
+        tts_params,
     )
 
     synthesize_text(
         body,
         file_map['tts-body.mp3'],
-        name='en-IN-Wavenet-B',
-        pitch=-1,
-        speaking_rate=0.8,
+        tts_params,
     )
 
     print('Text-to-speech audio created')
 
+
     # Slow the TTS voice further
-    title_rate = 0.9
+    title_rate = 1
     change_audio_speed(
         file_map['tts-title.mp3'],
         title_rate,
@@ -163,7 +160,7 @@ def create_poetry(title, body):
         **ffmpeg_config
     )
 
-    body_rate = 0.9
+    body_rate = 1
     change_audio_speed(
         file_map['tts-body.mp3'],
         body_rate,
@@ -355,11 +352,11 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, **kwargs):
 
     # TODO Make this work
     # Construct params for Google TTS
-#    tts_params = {
-#        'name': voice,
-#        'speaking_rate': speaking_rate,
-#        'pitch': pitch,
-#    }
+    tts_params = {
+        'name': kwargs['voice'],
+        'speaking_rate': kwargs['speaking_rate'],
+        'pitch': kwargs['pitch'],        
+    }
 
     # Setup for logging
     makedir(f'logs')
@@ -385,7 +382,7 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, **kwargs):
     # Make a poem from the ad
     poem_filepath = ''
     try:
-        poem_filepath = create_poetry(obj['title'], obj['body'])
+        poem_filepath = create_poetry(obj['title'], obj['body'],tts_params)
         ad_blob.metadata = {'in-use': 'false'}
         ad_blob.patch()
     except Exception as e:
@@ -419,9 +416,6 @@ if __name__ == '__main__':
     parser.add_argument('--voice', default='en-IN-Wavenet-C', help="TTS voice option")
     parser.add_argument('--speaking_rate', type=float, default=.85, help="TTS speaking rate")
     parser.add_argument('--pitch', type=float, default=-1., help="TTS pitch")
-
-    parser.add_argument('--title-speed-factor', type=float, default=.85, help="Speed multiplier for title audio")
-    parser.add_argument('--body-speed-factor', type=float, default=.9, help="Speed multiplier for body audio")
 
     args = parser.parse_args()
 
