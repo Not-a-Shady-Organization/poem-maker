@@ -105,7 +105,7 @@ def create_file_structure(post_subdirectory):
 
 
 
-def create_poetry(title, body, tts_params, image_flavor):
+def create_poetry(title, body, image_flavor=None, voice=None, speaking_rate=None, pitch=None):
     ffmpeg_config = {'loglevel': 'panic', 'safe': 0, 'hide_banner': None, 'y': None}
 
     print(f'Creating poem on... \n\tTitle:{title}\n\tBody:{body}')
@@ -140,13 +140,21 @@ def create_poetry(title, body, tts_params, image_flavor):
     synthesize_text(
         title,
         file_map['tts-title.mp3'],
-        tts_params,
+        tts_params={
+            'voice': voice,
+            'speaking_rate': speaking_rate,
+            'pitch': pitch
+        },
     )
 
     synthesize_text(
         body,
         file_map['tts-body.mp3'],
-        tts_params,
+        tts_params={
+            'voice': voice,
+            'speaking_rate': speaking_rate,
+            'pitch': pitch
+        },
     )
 
     print('Text-to-speech audio created')
@@ -203,6 +211,7 @@ def create_poetry(title, body, tts_params, image_flavor):
 #    with redirect_stdout(f):
     for word, interval in entity_intervals.items():
         search_term = clean_word(word) if not image_flavor else clean_word(word) + ' ' + choice(image_flavor)
+        print(search_term)
         image_filepath = download_image(search_term, file_map['image_dir'], f'{search_term}')
 
         entity_information[word] = {
@@ -339,7 +348,7 @@ def write_concat_file(concat_filepath, image_information):
 
 
 
-def poem_maker(bucket_path=None, destination_bucket_dir=None, image_flavor=None, **kwargs):
+def poem_maker(bucket_path=None, destination_bucket_dir=None, image_flavor=None, voice=None, speaking_rate=None, pitch=None):
     #################
     # VALIDATE MODE #
     #################
@@ -350,15 +359,6 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, image_flavor=None,
 
     if not destination_bucket_dir:
         raise BadOptionsError('Must specify a DESTINATION_BUCKET_DIR')
-
-
-    # TODO Make this work
-    # Construct params for Google TTS
-    tts_params = {
-        'name': kwargs['voice'],
-        'speaking_rate': kwargs['speaking_rate'],
-        'pitch': kwargs['pitch'],        
-    }
 
     # Setup for logging
     makedir(f'logs')
@@ -381,10 +381,11 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, image_flavor=None,
         'blob': ad_blob
     }
 
+
     # Make a poem from the ad
     poem_filepath = ''
     try:
-        poem_filepath = create_poetry(obj['title'], obj['body'],tts_params, image_flavor=image_flavor)
+        poem_filepath = create_poetry(obj['title'], obj['body'], image_flavor=image_flavor, voice=voice, speaking_rate=speaking_rate, pitch=pitch)
         ad_blob.metadata = {'in-use': 'false'}
         ad_blob.patch()
     except Exception as e:
