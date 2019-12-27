@@ -385,7 +385,14 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, image_flavor=None,
     # Make a poem from the ad
     poem_filepath = ''
     try:
-        poem_filepath = create_poetry(obj['title'], obj['body'], image_flavor=image_flavor, voice=voice, speaking_rate=speaking_rate, pitch=pitch)
+        poem_filepath = create_poetry(
+            obj['title'],
+            obj['body'],
+            image_flavor=image_flavor,
+            voice=voice,
+            speaking_rate=speaking_rate,
+            pitch=pitch
+        )
         ad_blob.metadata = {'in-use': 'false'}
         ad_blob.patch()
     except Exception as e:
