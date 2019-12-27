@@ -87,3 +87,10 @@ docker push us.gcr.io/ccblender/poem-maker:[TAG]
 ```
 
 Then, hop onto Cloud Run on the GCP Console. Select the `poem-maker` service and select `Deploy New Revision`. We should see our newly uploaded container in the list. Revise and wait for it to go live. Hitting the given endpoint with a browser will return a "We are live :)" message when the container is ready for requests.
+
+#### List of text-to-speech voices
+https://cloud.google.com/text-to-speech/docs/voices
+##### Creepy Voices
+en-GB-Wavenet-C
+en-US-Wavenet-A
+
