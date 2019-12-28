@@ -369,7 +369,7 @@ def poem_maker(bucket_path=None, destination_bucket_dir=None, image_flavor=None,
 
 
     # Set file to in-use
-    ad_blob = get_blob(bucket_path)
+    ad_blob = get_blob('craig-the-poet', bucket_path)
     ad_blob.metadata = {'in-use': 'true'}
     ad_blob.patch()
 
